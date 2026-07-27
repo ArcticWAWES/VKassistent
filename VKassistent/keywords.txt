@@ -1,0 +1,15 @@
+VKassistent	KEYWORD1
+connectWIFI	KEYWORD2
+proccesMessage	KEYWORD2
+send	KEYWORD2
+sendWithKeyboard	KEYWORD2
+addAdmin	KEYWORD2
+isAdmin	KEYWORD2
+begin	KEYWORD2
+loop	KEYWORD2
+createKeyboard	LITERAL1
+positive	LITERAL1
+negative	LITERAL1
+primary	LITERAL1
+secondary	LITERAL1
+Button	KEYWORD1
