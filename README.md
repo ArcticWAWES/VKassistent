@@ -61,8 +61,7 @@ ID админа как в примере выше.
 
 ``` cpp
 void setup() {
-  Serial.begin(115200);
-  pinMode(LED_PIN, OUTPUT);
+  Serial.begin(115200); // важно сделать именно эту частоту
   
   VKassistent.connectWIFI(SSID, PASSWORD);     // Подключаем Wi-Fi            |       Connecting to Wi-Fi    
   VKassistent.begin();                         // Запускаем бота              |       launching the bot
