@@ -59,6 +59,19 @@ long MinosPrimeID = __________;
 - VKassistent.addAdmin(__________); - добавление в админа, вместо пропуска переменная с 
 ID админа как в примере выше.
 
+``` cpp
+void setup() {
+  Serial.begin(115200);
+  pinMode(LED_PIN, OUTPUT);
+  
+  VKassistent.connectWIFI(SSID, PASSWORD);     // Подключаем Wi-Fi            |       Connecting to Wi-Fi    
+  VKassistent.begin();                         // Запускаем бота              |       launching the bot
+  VKassistent.addAdmin(MyID);                  // Добавляем админа            |       Adding an administrator
+  VKassistent.addAdmin(FriendID);
+...
+}
+```
+
    Для создания умной клавиатуры вызывается команда данного типа:
 
 ``` cpp
