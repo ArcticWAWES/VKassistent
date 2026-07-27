@@ -22,20 +22,20 @@ void setup() {
   
   // Создаём клавиатуру | Create a keyboard
   String menu = createKeyboard(
-    Button("💡 ВКЛ", positive),
-    Button("💡 ВЫКЛ", negative)
+    Button("💡🟢", positive),
+    Button("💡🔴", negative)
   );
   
   // Команда "💡 ВКЛ" | First command
-  VKassistent.proccesMessage("💡 ВКЛ", [](long UserID, String text) {
+  VKassistent.proccesMessage("💡🟢", [](long UserID, String text) {
     digitalWrite(LED_PIN, HIGH);
-    VKassistent.send(UserID, "✅");
+    VKassistent.send(UserID, "💡🟢\n\nКомманда выполнена!\nCommand executed!");
   });
   
   // Команда "💡 ВЫКЛ"  | Second command
-  VKassistent.proccesMessage("💡 ВЫКЛ", [](long UserID, String text) {
+  VKassistent.proccesMessage("💡🔴", [](long UserID, String text) {
     digitalWrite(LED_PIN, LOW);
-    VKassistent.send(UserID, "❎");
+    VKassistent.send(UserID, "💡🔴\n\nКомманда выполнена!\nCommand executed!");
   });
   
   // Приветствие | Greeting
