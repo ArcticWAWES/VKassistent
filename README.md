@@ -87,7 +87,7 @@ VK поддерживает данные цвета кнопок:
 
 ``` cpp
   VKassistent.proccesMessage("ВКЛЮЧИТЬ", [](long UserID, String text) {
-    ...
+    //Your code executed upon receipt of this message
   });
 ```
 
