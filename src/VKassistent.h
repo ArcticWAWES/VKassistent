@@ -184,14 +184,13 @@ public:
   void sendGeo(long peerId, const String& text, float lat, float lon);
 
   // ─── Отправка фото из FS ─────────────────────────────
-  bool sendPhotoFromFS(long peerId, fs::FS& fs, const String& path);
-  bool sendPhotoFromFS(long peerId, const String& text, fs::FS& fs, const String& path);
+  bool sendPhotoFromFS(long peerId, const String& path);
+  bool sendPhotoFromFS(long peerId, const String& text, const String& path);
 
   // ─── Сохранение вложений ─────────────────────────────
   String savePhoto(const VKMessage& msg);
   String saveDoc(const VKMessage& msg);
   String saveAttachment(const VKMessage& msg, const String& path);
-  String saveAttachmentToFS(const VKMessage& msg, fs::FS& fs, const String& path);
 
   String savePhotoAndReply(const VKMessage& msg);
   String saveDocAndReply(const VKMessage& msg);
@@ -224,6 +223,11 @@ private:
   fs::FS* _storage     = nullptr;
   bool    _storageIsSD = false;
 
+  // ─── Утилиты логирования в рамке ─────────────────────
+  void   _boxStart(const String& title);
+  void   _boxEnd();
+
+  // ─── Внутренние методы ──────────────────────────────
   void   _resetClient();
   void   _getLongPollServer();
   void   _pollLongPoll();
@@ -234,7 +238,7 @@ private:
   void   _parseAttachments(JsonArray atts, std::vector<VKAttachment>& out);
 
   fs::FS& _getStorage();
-  bool    _downloadToFS(fs::FS& fs, const String& url, const String& path);
+  bool    _downloadToFS(const String& url, const String& path);
   void    _clearFS();
   void    _logStorage();
   String  _sanitizeName(String name);
@@ -242,6 +246,7 @@ private:
   String  _photoFileName(const VKMessage& msg);
   String  _docFileName(const VKMessage& msg);
 
+  // ─── Загрузка фото на VK ────────────────────────────
   String  _getPhotoUploadServer();
   String  _uploadPhotoToServer(const String& uploadUrl,
                                const uint8_t* buf, size_t len);
