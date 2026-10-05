@@ -7,18 +7,36 @@ VKassistent::VKassistent(String Token, String GroupID) {
   _GroupID = GroupID;
 }
 
+// ─── Утилиты логирования в рамке ───────────────────────────
+void VKassistent::_boxStart(const String& title) {
+  Serial.println("================================");
+  Serial.print("📡 VKassistent: ");
+  Serial.println(title);
+  Serial.println("--------------------------------");
+}
+
+void VKassistent::_boxEnd() {
+  Serial.println("================================");
+}
+
 // ─── Подключение к Wi-Fi ───────────────────────────────────
 void VKassistent::connectWIFI(String SSID, String PASSWORD) {
   if (WiFi.status() == WL_CONNECTED) {
     if (firstPrint) {
-      Serial.println("✅ Wi-Fi подключен!");
+      _boxStart("Wi-Fi");
+      Serial.println("✅ Уже подключен");
       Serial.println("🌐 IP: " + WiFi.localIP().toString());
+      _boxEnd();
       firstPrint = false;
     }
     return;
   }
 
-  Serial.print("📡 Подключение к Wi-Fi");
+  _boxStart("Wi-Fi подключение");
+  Serial.print("📡 Подключаюсь к: ");
+  Serial.println(SSID);
+  Serial.print("⏳ Ждём: ");
+
   WiFi.begin(SSID.c_str(), PASSWORD.c_str());
 
   int attempts = 0;
@@ -27,43 +45,37 @@ void VKassistent::connectWIFI(String SSID, String PASSWORD) {
     Serial.print(".");
     attempts++;
   }
+  Serial.println();
 
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n✅ Wi-Fi подключен!");
+    Serial.println("✅ Wi-Fi подключен!");
     Serial.println("🌐 IP: " + WiFi.localIP().toString());
     firstPrint = false;
   } else {
-    Serial.println("\n❌ Ошибка подключения!");
+    Serial.println("❌ Ошибка подключения!");
   }
+  _boxEnd();
 }
 
 // ─── Инициализация ─────────────────────────────────────────
 void VKassistent::begin() {
   randomSeed(esp_random());
 
-  Serial.print("Reset reason: ");
+  _boxStart("Инициализация");
+  Serial.print("🔄 Reset reason: ");
   Serial.println((int)esp_reset_reason());
 
-  // ─── LittleFS ──────────────────────────────────────────
   if (!LittleFS.begin(true)) {
-    Serial.println("❌ LittleFS.begin() FAILED");
-    Serial.println("   Пробую basePath /spiffs...");
-    if (!LittleFS.begin(false, "/spiffs")) {
-      Serial.println("❌ LittleFS с /spiffs тоже FAILED");
-      Serial.println("   Нужен кастомный partition table!");
-    } else {
-      Serial.println("✅ LittleFS OK (basePath /spiffs)");
-    }
+    Serial.println("⚠️ LittleFS не запустился");
   } else {
     Serial.println("✅ LittleFS OK");
+    Serial.print("💾 total: "); Serial.println(LittleFS.totalBytes());
+    Serial.print("💾 used:  "); Serial.println(LittleFS.usedBytes());
+    Serial.print("💾 free:  "); Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
   }
-
-  Serial.print("💾 total: "); Serial.println(LittleFS.totalBytes());
-  Serial.print("💾 used:  "); Serial.println(LittleFS.usedBytes());
-  Serial.print("💾 free:  "); Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
-
   _storage     = &LittleFS;
   _storageIsSD = false;
+  _boxEnd();
 
   _getLongPollServer();
 }
@@ -72,7 +84,8 @@ void VKassistent::begin() {
 void VKassistent::loop() {
   if (WiFi.status() != WL_CONNECTED) {
     _wifiFailCount++;
-    Serial.print("⚠️ Wi-Fi потерян, попытка ");
+    _boxStart("Wi-Fi потерян");
+    Serial.print("⚠️ Попытка: ");
     Serial.println(_wifiFailCount);
 
     if (_wifiFailCount % 5 == 0) {
@@ -84,6 +97,7 @@ void VKassistent::loop() {
       delay(100);
       WiFi.reconnect();
     }
+    _boxEnd();
 
     delay(10000);
     return;
@@ -100,17 +114,23 @@ void VKassistent::loop() {
   _pollLongPoll();
 }
 
-// ─── Хранилище ─────────────────────────────────────────────
+// ─── Хранилище: LittleFS ───────────────────────────────────
 void VKassistent::useLittleFS() {
   if (!LittleFS.begin(true)) {
-    Serial.println("❌ LittleFS не запустился");
+    _boxStart("LittleFS");
+    Serial.println("❌ Не запустился");
+    _boxEnd();
     return;
   }
   _storage     = &LittleFS;
   _storageIsSD = false;
-  Serial.println("💾 Хранилище: LittleFS");
+
+  _boxStart("Хранилище");
+  Serial.println("💾 Тип: LittleFS");
+  _boxEnd();
 }
 
+// ─── Хранилище: SD ─────────────────────────────────────────
 void VKassistent::useSD(int csPin) {
   useSD(csPin, 18, 19, 23);
 }
@@ -118,25 +138,31 @@ void VKassistent::useSD(int csPin) {
 void VKassistent::useSD(int cs, int sck, int miso, int mosi) {
   SPI.begin(sck, miso, mosi, cs);
 
+  _boxStart("Хранилище: SD");
+
   if (!SD.begin(cs)) {
     Serial.println("❌ SD не найдена, остаёмся на LittleFS");
+    _boxEnd();
     return;
   }
 
   if (SD.cardType() == CARD_NONE) {
-    Serial.println("❌ SD: карта не вставлена");
+    Serial.println("❌ Карта не вставлена");
+    _boxEnd();
     return;
   }
 
   _storage     = &SD;
   _storageIsSD = true;
 
-  Serial.println("💾 Хранилище: SD");
-  Serial.print("   total: ");
+  Serial.println("💾 Тип: SD");
+  Serial.print("📦 total: ");
   Serial.print(SD.totalBytes() / 1024 / 1024);
   Serial.println(" MB");
+  _boxEnd();
 }
 
+// ─── _getStorage() ─────────────────────────────────────────
 fs::FS& VKassistent::_getStorage() {
   if (_storage == nullptr) {
     _storage     = &LittleFS;
@@ -145,6 +171,7 @@ fs::FS& VKassistent::_getStorage() {
   return *_storage;
 }
 
+// ─── _logStorage() ─────────────────────────────────────────
 void VKassistent::_logStorage() {
   if (_storageIsSD) {
     Serial.print("💾 SD: used=");
@@ -160,18 +187,29 @@ void VKassistent::_logStorage() {
 }
 
 // ─── _clearFS() ────────────────────────────────────────────
-//  Удаляем все файлы во всех директориях.
 void VKassistent::_clearFS() {
-  Serial.print("💾 LittleFS before: used=");
-  Serial.print(LittleFS.usedBytes());
-  Serial.print(" free=");
-  Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
+  fs::FS& fs = _getStorage();
+
+  _boxStart("Очистка FS");
+
+  if (_storageIsSD) {
+    Serial.print("💾 SD before: used=");
+    Serial.print(SD.usedBytes());
+    Serial.print(" free=");
+    Serial.println(SD.totalBytes() - SD.usedBytes());
+  } else {
+    Serial.print("💾 LittleFS before: used=");
+    Serial.print(LittleFS.usedBytes());
+    Serial.print(" free=");
+    Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
+  }
 
   Serial.println("🧹 Удаляю файлы...");
 
-  File root = LittleFS.open("/");
+  File root = fs.open("/");
   if (!root) {
-    Serial.println("⚠️ Не могу открыть LittleFS root");
+    Serial.println("⚠️ Не могу открыть корень FS");
+    _boxEnd();
     return;
   }
 
@@ -182,35 +220,43 @@ void VKassistent::_clearFS() {
     bool isDir = f.isDirectory();
     f.close();
     if (isDir) {
-      // рекурсивное удаление каталога
-      File sub = LittleFS.open(name);
+      File sub = fs.open(name);
       if (sub) {
         File sf = sub.openNextFile();
         while (sf) {
           String sName = sf.name();
           sf.close();
-          LittleFS.remove(sName);
+          fs.remove(sName);
           count++;
           yield();
           sf = sub.openNextFile();
         }
         sub.close();
       }
-      LittleFS.rmdir(name);
+      fs.rmdir(name);
     } else {
-      if (LittleFS.remove(name)) count++;
+      if (fs.remove(name)) count++;
     }
     yield();
     f = root.openNextFile();
   }
   root.close();
 
-  Serial.print("✅ Удалено: ");
+  Serial.print("✅ Удалено файлов: ");
   Serial.println(count);
-  Serial.print("💾 LittleFS after: free=");
-  Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
+
+  if (_storageIsSD) {
+    Serial.print("💾 SD after: free=");
+    Serial.println(SD.totalBytes() - SD.usedBytes());
+  } else {
+    Serial.print("💾 LittleFS after: free=");
+    Serial.println(LittleFS.totalBytes() - LittleFS.usedBytes());
+  }
+
+  _boxEnd();
 }
 
+// ─── _sanitizeName() ───────────────────────────────────────
 String VKassistent::_sanitizeName(String name) {
   String out;
   for (size_t i = 0; i < name.length(); i++) {
@@ -223,6 +269,7 @@ String VKassistent::_sanitizeName(String name) {
   return out;
 }
 
+// ─── Имена файлов ──────────────────────────────────────────
 String VKassistent::_photoFileName(const VKMessage& msg) {
   String name = "photo_";
   name += String(msg.fromId);
@@ -240,16 +287,10 @@ String VKassistent::_docFileName(const VKMessage& msg) {
   return _sanitizeName(title);
 }
 
-// ─── Сохранение ────────────────────────────────────────────
+// ─── savePhoto / saveDoc ───────────────────────────────────
 String VKassistent::savePhoto(const VKMessage& msg) {
-  if (!msg.hasPhoto()) {
-    Serial.println("⚠️ savePhoto: в сообщении нет фото");
-    return "";
-  }
-
-  fs::FS& fs = _getStorage();
+  if (!msg.hasPhoto()) return "";
   if (!_storageIsSD) _clearFS();
-
   _logStorage();
 
   String path = "/";
@@ -259,19 +300,13 @@ String VKassistent::savePhoto(const VKMessage& msg) {
   }
   path += _photoFileName(msg);
 
-  if (_downloadToFS(fs, msg.getPhotoUrl(), path)) return path;
+  if (_downloadToFS(msg.getPhotoUrl(), path)) return path;
   return "";
 }
 
 String VKassistent::saveDoc(const VKMessage& msg) {
-  if (!msg.hasDoc()) {
-    Serial.println("⚠️ saveDoc: в сообщении нет документа");
-    return "";
-  }
-
-  fs::FS& fs = _getStorage();
+  if (!msg.hasDoc()) return "";
   if (!_storageIsSD) _clearFS();
-
   _logStorage();
 
   String path = "/";
@@ -281,7 +316,7 @@ String VKassistent::saveDoc(const VKMessage& msg) {
   }
   path += _docFileName(msg);
 
-  if (_downloadToFS(fs, msg.getDocUrl(), path)) return path;
+  if (_downloadToFS(msg.getDocUrl(), path)) return path;
   return "";
 }
 
@@ -289,20 +324,8 @@ String VKassistent::saveAttachment(const VKMessage& msg, const String& path) {
   if (msg.attachments.empty()) return "";
   String url = msg.attachments[0].url;
   if (url == "") return "";
-
-  fs::FS& fs = _getStorage();
   if (!_storageIsSD) _clearFS();
-
-  if (_downloadToFS(fs, url, path)) return path;
-  return "";
-}
-
-String VKassistent::saveAttachmentToFS(const VKMessage& msg, fs::FS& fs, const String& path) {
-  if (msg.attachments.empty()) return "";
-  String url = msg.attachments[0].url;
-  if (url == "") return "";
-
-  if (_downloadToFS(fs, url, path)) return path;
+  if (_downloadToFS(url, path)) return path;
   return "";
 }
 
@@ -332,7 +355,7 @@ String VKassistent::saveDocAndReply(const VKMessage& msg) {
   return path;
 }
 
-// ─── sendGeo() ─────────────────────────────────────────────
+// ─── sendGeo ───────────────────────────────────────────────
 void VKassistent::sendGeo(long peerId, float lat, float lon) {
   sendGeo(peerId, "", lat, lon);
 }
@@ -349,35 +372,40 @@ void VKassistent::sendGeo(long peerId, const String& text, float lat, float lon)
   _sendRequest(url);
 }
 
-// ─── sendPhotoFromFS() ─────────────────────────────────────
-bool VKassistent::sendPhotoFromFS(long peerId, fs::FS& fs, const String& path) {
-  return sendPhotoFromFS(peerId, "", fs, path);
+// ─── sendPhotoFromFS ───────────────────────────────────────
+bool VKassistent::sendPhotoFromFS(long peerId, const String& path) {
+  return sendPhotoFromFS(peerId, "", path);
 }
 
-bool VKassistent::sendPhotoFromFS(long peerId, const String& text,
-                                  fs::FS& fs, const String& path) {
+bool VKassistent::sendPhotoFromFS(long peerId, const String& text, const String& path) {
+  fs::FS& fs = _getStorage();
+
+  _boxStart("Отправка фото");
+
   File f = fs.open(path, FILE_READ);
   if (!f) {
-    Serial.print("❌ sendPhotoFromFS: не могу открыть ");
-    Serial.println(path);
+    Serial.println("❌ Не могу открыть " + path);
+    _boxEnd();
     return false;
   }
 
   size_t len = f.size();
   if (len == 0) {
-    Serial.println("❌ sendPhotoFromFS: файл пуст");
+    Serial.println("❌ Файл пуст");
     f.close();
+    _boxEnd();
     return false;
   }
 
-  Serial.print("📸 sendPhotoFromFS: файл ");
+  Serial.print("📸 Файл: ");
   Serial.print(len);
   Serial.println(" байт");
 
   uint8_t* buf = (uint8_t*)malloc(len);
   if (!buf) {
-    Serial.println("❌ sendPhotoFromFS: нет heap для буфера");
+    Serial.println("❌ Нет heap для буфера");
     f.close();
+    _boxEnd();
     return false;
   }
 
@@ -385,25 +413,21 @@ bool VKassistent::sendPhotoFromFS(long peerId, const String& text,
   f.close();
 
   if (read != len) {
-    Serial.print("❌ sendPhotoFromFS: прочитано ");
-    Serial.print(read);
-    Serial.print(" из ");
-    Serial.println(len);
+    Serial.println("❌ Прочитано не всё");
     free(buf);
+    _boxEnd();
     return false;
   }
 
   if (buf[0] != 0xFF || buf[1] != 0xD8) {
-    Serial.print("⚠️ sendPhotoFromFS: не JPEG. Первые байты: ");
-    Serial.print(buf[0], HEX);
-    Serial.print(" ");
-    Serial.println(buf[1], HEX);
+    Serial.println("⚠️ Не JPEG");
   }
 
   String uploadUrl = _getPhotoUploadServer();
   if (uploadUrl == "") {
-    Serial.println("❌ sendPhotoFromFS: не получил upload_url");
+    Serial.println("❌ Не получил upload_url");
     free(buf);
+    _boxEnd();
     return false;
   }
   Serial.println("📤 upload_url получен");
@@ -412,21 +436,22 @@ bool VKassistent::sendPhotoFromFS(long peerId, const String& text,
   free(buf);
 
   if (respJson == "") {
-    Serial.println("❌ sendPhotoFromFS: upload не удался");
+    Serial.println("❌ Upload не удался");
+    _boxEnd();
     return false;
   }
 
   DynamicJsonDocument doc(4096);
   DeserializationError err = deserializeJson(doc, respJson);
   if (err) {
-    Serial.print("❌ sendPhotoFromFS: JSON upload error: ");
-    Serial.println(err.c_str());
+    Serial.println("❌ JSON upload error");
+    _boxEnd();
     return false;
   }
 
   if (doc.containsKey("error")) {
-    Serial.print("❌ sendPhotoFromFS upload error: ");
-    Serial.println(respJson);
+    Serial.println("❌ VK upload error");
+    _boxEnd();
     return false;
   }
 
@@ -434,28 +459,9 @@ bool VKassistent::sendPhotoFromFS(long peerId, const String& text,
   String photo  = doc["photo"].as<String>();
   String hash   = doc["hash"].as<String>();
 
-  if (server == "" && doc.containsKey("file1")) {
-    Serial.println("ℹ️ Разбираю новый формат (file1)");
-    String file1Raw = doc["file1"].as<String>();
-    DynamicJsonDocument inner(2048);
-    DeserializationError e2 = deserializeJson(inner, file1Raw);
-    if (e2) {
-      Serial.print("❌ inner JSON error: ");
-      Serial.println(e2.c_str());
-      return false;
-    }
-    JsonObject item = inner[0];
-    if (item.isNull()) {
-      Serial.println("❌ file1: пустой массив");
-      return false;
-    }
-    server = item["server"].as<String>();
-    photo  = item["photo"].as<String>();
-    hash   = item["hash"].as<String>();
-  }
-
   if (server == "" || photo == "" || hash == "") {
-    Serial.println("❌ sendPhotoFromFS: пустые server/photo/hash");
+    Serial.println("❌ Пустые server/photo/hash");
+    _boxEnd();
     return false;
   }
   Serial.println("📥 Фото загружено, сохраняю...");
@@ -463,18 +469,21 @@ bool VKassistent::sendPhotoFromFS(long peerId, const String& text,
   int photoId = 0;
   int ownerId = 0;
   if (!_saveMessagesPhoto(server, photo, hash, photoId, ownerId)) {
-    Serial.println("❌ sendPhotoFromFS: saveMessagesPhoto не удался");
+    Serial.println("❌ saveMessagesPhoto не удался");
+    _boxEnd();
     return false;
   }
-  Serial.print("✅ Фото сохранено: photo");
+  Serial.print("✅ Сохранено: photo");
   Serial.print(ownerId);
   Serial.print("_");
   Serial.println(photoId);
 
-  return _sendPhotoAttachment(peerId, text, photoId, ownerId);
+  bool result = _sendPhotoAttachment(peerId, text, photoId, ownerId);
+  _boxEnd();
+  return result;
 }
 
-// ─── _getPhotoUploadServer() ───────────────────────────────
+// ─── _getPhotoUploadServer ─────────────────────────────────
 String VKassistent::_getPhotoUploadServer() {
   _resetClient();
 
@@ -487,7 +496,7 @@ String VKassistent::_getPhotoUploadServer() {
   int code = http.GET();
 
   if (code != 200) {
-    Serial.print("❌ _getPhotoUploadServer HTTP: ");
+    Serial.print("❌ HTTP: ");
     Serial.println(code);
     if (code == -1) _client.stop();
     http.end();
@@ -502,19 +511,16 @@ String VKassistent::_getPhotoUploadServer() {
   if (err) return "";
 
   if (doc.containsKey("error")) {
-    Serial.print("❌ _getPhotoUploadServer VK error: ");
-    Serial.println(payload);
+    Serial.println("❌ VK error: " + payload);
     return "";
   }
 
   return doc["response"]["upload_url"].as<String>();
 }
 
-// ─── _uploadPhotoToServer() ────────────────────────────────
+// ─── _uploadPhotoToServer ──────────────────────────────────
 String VKassistent::_uploadPhotoToServer(const String& uploadUrl,
                                           const uint8_t* buf, size_t len) {
-  Serial.println("🌐 upload URL: " + uploadUrl.substring(0, 120));
-
   int protoPos = uploadUrl.indexOf("://");
   if (protoPos < 0) return "";
   int slashPos = uploadUrl.indexOf("/", protoPos + 3);
@@ -523,20 +529,13 @@ String VKassistent::_uploadPhotoToServer(const String& uploadUrl,
   String host = uploadUrl.substring(protoPos + 3, slashPos);
   String path = uploadUrl.substring(slashPos);
 
-  Serial.println("🌐 host: " + host);
-
   String fieldName = "photo";
-  if (uploadUrl.indexOf("bulk_upload") >= 0) {
-    fieldName = "file1";
-    Serial.println("ℹ️ bulk_upload — используем file1");
-  } else {
-    Serial.println("ℹ️ upload.php — используем photo");
-  }
+  if (uploadUrl.indexOf("bulk_upload") >= 0) fieldName = "file1";
 
   _resetClient();
 
   if (!_client.connect(host.c_str(), 443)) {
-    Serial.println("❌ _uploadPhotoToServer: connect fail");
+    Serial.println("❌ connect fail");
     return "";
   }
 
@@ -562,7 +561,6 @@ String VKassistent::_uploadPhotoToServer(const String& uploadUrl,
     size_t chunk = (len - sent) > 1024 ? 1024 : (len - sent);
     size_t w = _client.write(buf + sent, chunk);
     if (w == 0) {
-      Serial.println("❌ _uploadPhotoToServer: write fail");
       _client.stop();
       return "";
     }
@@ -580,8 +578,7 @@ String VKassistent::_uploadPhotoToServer(const String& uploadUrl,
       char c = _client.read();
       rawResponse += c;
       if (!headersDone) {
-        int idx = rawResponse.indexOf("\r\n\r\n");
-        if (idx >= 0) headersDone = true;
+        if (rawResponse.indexOf("\r\n\r\n") >= 0) headersDone = true;
       }
     }
     if (headersDone && !_client.connected()) break;
@@ -594,19 +591,14 @@ String VKassistent::_uploadPhotoToServer(const String& uploadUrl,
 
   _client.stop();
 
-  if (rawResponse.length() == 0) {
-    Serial.println("❌ _uploadPhotoToServer: пустой ответ");
-    return "";
-  }
+  if (rawResponse.length() == 0) return "";
 
   int headerEnd = rawResponse.indexOf("\r\n\r\n");
   if (headerEnd < 0) return "";
-  String body = rawResponse.substring(headerEnd + 4);
-
-  return body;
+  return rawResponse.substring(headerEnd + 4);
 }
 
-// ─── _saveMessagesPhoto() ──────────────────────────────────
+// ─── _saveMessagesPhoto ────────────────────────────────────
 bool VKassistent::_saveMessagesPhoto(const String& server, const String& photo,
                                       const String& hash,
                                       int& outId, int& outOwnerId) {
@@ -624,8 +616,6 @@ bool VKassistent::_saveMessagesPhoto(const String& server, const String& photo,
   int code = http.GET();
 
   if (code != 200) {
-    Serial.print("❌ _saveMessagesPhoto HTTP: ");
-    Serial.println(code);
     if (code == -1) _client.stop();
     http.end();
     return false;
@@ -636,23 +626,12 @@ bool VKassistent::_saveMessagesPhoto(const String& server, const String& photo,
 
   DynamicJsonDocument doc(4096);
   DeserializationError err = deserializeJson(doc, payload);
-  if (err) {
-    Serial.print("❌ _saveMessagesPhoto JSON: ");
-    Serial.println(err.c_str());
-    return false;
-  }
+  if (err) return false;
 
-  if (doc.containsKey("error")) {
-    Serial.print("❌ _saveMessagesPhoto VK error: ");
-    Serial.println(payload);
-    return false;
-  }
+  if (doc.containsKey("error")) return false;
 
   JsonArray resp = doc["response"];
-  if (resp.size() == 0) {
-    Serial.println("❌ _saveMessagesPhoto: пустой response");
-    return false;
-  }
+  if (resp.size() == 0) return false;
 
   outId      = resp[0]["id"]       | 0;
   outOwnerId = resp[0]["owner_id"] | 0;
@@ -660,7 +639,7 @@ bool VKassistent::_saveMessagesPhoto(const String& server, const String& photo,
   return outId != 0;
 }
 
-// ─── _sendPhotoAttachment() ────────────────────────────────
+// ─── _sendPhotoAttachment ──────────────────────────────────
 bool VKassistent::_sendPhotoAttachment(long peerId, const String& text,
                                         int photoId, int ownerId) {
   String attachment = "photo" + String(ownerId) + "_" + String(photoId);
@@ -677,9 +656,14 @@ bool VKassistent::_sendPhotoAttachment(long peerId, const String& text,
   return true;
 }
 
-// ─── _downloadToFS() ───────────────────────────────────────
-bool VKassistent::_downloadToFS(fs::FS& fs, const String& url, const String& path) {
-  Serial.println("⬇️ Скачиваю: " + url.substring(0, 80) + "...");
+// ─── _downloadToFS ─────────────────────────────────────────
+bool VKassistent::_downloadToFS(const String& url, const String& path) {
+  fs::FS& fs = _getStorage();
+
+  _boxStart("Скачивание");
+
+  Serial.print("⬇️ URL: ");
+  Serial.println(url.substring(0, 80) + "...");
 
   _resetClient();
 
@@ -689,28 +673,29 @@ bool VKassistent::_downloadToFS(fs::FS& fs, const String& url, const String& pat
 
   int code = http.GET();
   if (code != 200) {
-    Serial.print("❌ _downloadToFS HTTP: ");
+    Serial.print("❌ HTTP: ");
     Serial.println(code);
     if (code == -1) _client.stop();
     http.end();
+    _boxEnd();
     return false;
   }
 
   int contentLength = http.getSize();
-  Serial.print("📦 Content-Length: ");
-  Serial.println(contentLength);
-  Serial.print("💾 Free heap: ");
+  Serial.print("📦 Размер: ");
+  Serial.print(contentLength);
+  Serial.println(" байт");
+  Serial.print("💾 Heap: ");
   Serial.println(ESP.getFreeHeap());
 
   File f = fs.open(path, FILE_WRITE);
   if (!f) {
-    Serial.print("❌ Не могу открыть файл: ");
+    Serial.print("❌ Не могу открыть: ");
     Serial.println(path);
     http.end();
+    _boxEnd();
     return false;
   }
-
-  Serial.println("✅ Файл открыт, начинаю запись...");
 
   WiFiClient* stream = http.getStreamPtr();
   size_t written = 0;
@@ -725,18 +710,12 @@ bool VKassistent::_downloadToFS(fs::FS& fs, const String& url, const String& pat
       if (n <= 0) break;
 
       size_t w = f.write(buf, n);
-      if (w != (size_t)n) {
-        Serial.print("❌ FS write fail: ");
-        Serial.print(w);
-        Serial.print(" из ");
-        Serial.println(n);
-        break;
-      }
+      if (w != (size_t)n) break;
       written += w;
       lastData = millis();
     } else {
       if (millis() - lastData > 10000) {
-        Serial.println("❌ _downloadToFS: таймаут 10 сек без данных");
+        Serial.println("❌ Таймаут 10 сек");
         break;
       }
       yield();
@@ -747,22 +726,23 @@ bool VKassistent::_downloadToFS(fs::FS& fs, const String& url, const String& pat
   f.close();
   http.end();
 
-  Serial.print("✅ _downloadToFS: ");
+  Serial.print("✅ Записано: ");
   Serial.print(written);
-  Serial.print(" байт → ");
+  Serial.print(" → ");
   Serial.println(path);
 
+  _boxEnd();
   return written > 0;
 }
 
-// ─── _resetClient() ────────────────────────────────────────
+// ─── _resetClient ──────────────────────────────────────────
 void VKassistent::_resetClient() {
   _client.stop();
   _client = WiFiClientSecure();
   _client.setInsecure();
 }
 
-// ─── _getLongPollServer() ──────────────────────────────────
+// ─── _getLongPollServer ────────────────────────────────────
 void VKassistent::_getLongPollServer() {
   if (WiFi.status() != WL_CONNECTED) return;
 
@@ -783,25 +763,26 @@ void VKassistent::_getLongPollServer() {
     DeserializationError err = deserializeJson(doc, payload);
 
     if (err) {
-      Serial.print("⚠️ _getLongPollServer JSON error: ");
+      _boxStart("Long Poll");
+      Serial.print("⚠️ JSON error: ");
       Serial.println(err.c_str());
+      _boxEnd();
     } else if (doc.containsKey("error")) {
-      int errCode = doc["error"]["error_code"] | -1;
-      const char* errMsg = doc["error"]["error_msg"] | "unknown";
-      Serial.print("❌ VK error: ");
-      Serial.print(errCode);
-      Serial.print(" — ");
-      Serial.println(errMsg);
+      _boxStart("Long Poll");
+      Serial.println("❌ VK error: " + payload);
+      _boxEnd();
     } else {
       _lpServer = doc["response"]["server"].as<String>();
       _lpKey    = doc["response"]["key"].as<String>();
       _lpTs     = doc["response"]["ts"].as<String>();
       _lpReady  = true;
-      Serial.println("✅ Long Poll сервер получен");
+
+      _boxStart("Long Poll");
+      Serial.println("✅ Сервер получен");
+      Serial.println("🔗 " + _lpServer);
+      _boxEnd();
     }
   } else {
-    Serial.print("⚠️ _getLongPollServer HTTP: ");
-    Serial.println(code);
     if (code == -1) _client.stop();
   }
 
@@ -853,7 +834,9 @@ void VKassistent::sendWithKeyboard(long UserID, String text, String keyboard) {
 
 void VKassistent::sendToLast(String text) {
   if (_lastPeerId == 0) {
-    Serial.println("⚠️ sendToLast: вне колбэка");
+    _boxStart("sendToLast");
+    Serial.println("⚠️ Вне колбэка");
+    _boxEnd();
     return;
   }
   send(_lastPeerId, text);
@@ -867,7 +850,7 @@ bool VKassistent::isAdmin(long UserID) {
   return false;
 }
 
-// ─── _pollLongPoll() ───────────────────────────────────────
+// ─── _pollLongPoll ─────────────────────────────────────────
 void VKassistent::_pollLongPoll() {
   _client.setInsecure();
 
@@ -881,8 +864,10 @@ void VKassistent::_pollLongPoll() {
 
   if (code != 200) {
     if (code != -1 && code != -11) {
-      Serial.print("❌ _pollLongPoll HTTP: ");
+      _boxStart("Long Poll");
+      Serial.print("❌ HTTP: ");
       Serial.println(code);
+      _boxEnd();
     }
     if (code == -1) _client.stop();
     http.end();
@@ -929,23 +914,15 @@ void VKassistent::_pollLongPoll() {
   }
 }
 
-// ─── _handleCommand() ──────────────────────────────────────
+// ─── _handleCommand ────────────────────────────────────────
 void VKassistent::_handleCommand(VKMessage& msg) {
   long savedPeer = _lastPeerId;
   _lastPeerId = msg.peerId;
 
-  if (msg.hasPhoto()) {
-    for (auto& cb : _photoCallbacks) cb(msg);
-  }
-  if (msg.hasDoc()) {
-    for (auto& cb : _docCallbacks) cb(msg);
-  }
-  if (msg.hasGeo()) {
-    for (auto& cb : _geoCallbacks) cb(msg);
-  }
-  if (msg.hasSticker()) {
-    for (auto& cb : _stickerCallbacks) cb(msg);
-  }
+  if (msg.hasPhoto())   for (auto& cb : _photoCallbacks)   cb(msg);
+  if (msg.hasDoc())     for (auto& cb : _docCallbacks)     cb(msg);
+  if (msg.hasGeo())     for (auto& cb : _geoCallbacks)     cb(msg);
+  if (msg.hasSticker()) for (auto& cb : _stickerCallbacks) cb(msg);
 
   if (msg.text.length() > 0) {
     for (auto& rc : _commands) {
@@ -959,7 +936,7 @@ void VKassistent::_handleCommand(VKMessage& msg) {
   _lastPeerId = savedPeer;
 }
 
-// ─── _parseAttachments() ───────────────────────────────────
+// ─── _parseAttachments ─────────────────────────────────────
 void VKassistent::_parseAttachments(JsonArray atts, std::vector<VKAttachment>& out) {
   for (JsonObject a : atts) {
     VKAttachment att;
@@ -1004,7 +981,7 @@ void VKassistent::_parseAttachments(JsonArray atts, std::vector<VKAttachment>& o
   }
 }
 
-// ─── _sendRequest() ────────────────────────────────────────
+// ─── _sendRequest ──────────────────────────────────────────
 void VKassistent::_sendRequest(String url) {
   int attempts = 0;
   int code = -1;
@@ -1019,14 +996,18 @@ void VKassistent::_sendRequest(String url) {
     if (code == 200) {
       String response = http.getString();
       if (response.indexOf("\"error\"") != -1) {
-        Serial.println("❌ VK error (send): " + response);
+        _boxStart("VK отправка");
+        Serial.println("❌ " + response);
+        _boxEnd();
       }
     } else {
       if (code != -1 && code != -11) {
+        _boxStart("VK отправка");
         Serial.print("❌ Попытка ");
         Serial.print(attempts + 1);
         Serial.print(": HTTP ");
         Serial.println(code);
+        _boxEnd();
       }
       if (code == -1) _client.stop();
       delay(500);
@@ -1036,10 +1017,14 @@ void VKassistent::_sendRequest(String url) {
     attempts++;
   }
 
-  if (code != 200) Serial.println("❌ Не отправлено после 3 попыток");
+  if (code != 200) {
+    _boxStart("VK отправка");
+    Serial.println("❌ Не отправлено после 3 попыток");
+    _boxEnd();
+  }
 }
 
-// ─── _urlencode() ──────────────────────────────────────────
+// ─── _urlencode ────────────────────────────────────────────
 String VKassistent::_urlencode(String str) {
   String encoded = "";
   for (size_t i = 0; i < str.length(); i++) {
