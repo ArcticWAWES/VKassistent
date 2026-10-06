@@ -1,0 +1,9 @@
+VKassistent	KEYWORD1
+Button	KEYWORD1
+VKMessage	KEYWORD1
+createKeyboard	KEYWORD2
+connectWIFI	KEYWORD2
+send	KEYWORD2
+sendPhotoFromFS	KEYWORD2
+processMessage	KEYWORD2
+onMessage	KEYWORD2
