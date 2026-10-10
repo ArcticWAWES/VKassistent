@@ -2,13 +2,29 @@
 
 static bool firstPrint = true;
 
+// Forward-объявление: используется в sendGeo/sendWithKeyboard выше по тексту,
+// тело — внизу файла.
+static long _extractCmid(const String& response);
+
 VKassistent::VKassistent(String Token, String GroupID) {
   _Token   = Token;
   _GroupID = GroupID;
 }
 
+// ─── Логирование по уровням ────────────────────────────────
+void VKassistent::_logError(const String& msg) {
+  if (_logLevel >= VK_LOG_ERROR) Serial.println(msg);
+}
+void VKassistent::_logInfo(const String& msg) {
+  if (_logLevel >= VK_LOG_INFO) Serial.println(msg);
+}
+void VKassistent::_logDebug(const String& msg) {
+  if (_logLevel >= VK_LOG_DEBUG) Serial.println(msg);
+}
+
 // ─── Утилиты логирования в рамке ───────────────────────────
 void VKassistent::_boxStart(const String& title) {
+  if (_logLevel < VK_LOG_INFO) return;
   Serial.println("================================");
   Serial.print("📡 VKassistent: ");
   Serial.println(title);
@@ -16,6 +32,7 @@ void VKassistent::_boxStart(const String& title) {
 }
 
 void VKassistent::_boxEnd() {
+  if (_logLevel < VK_LOG_INFO) return;
   Serial.println("================================");
 }
 
@@ -356,11 +373,11 @@ String VKassistent::saveDocAndReply(const VKMessage& msg) {
 }
 
 // ─── sendGeo ───────────────────────────────────────────────
-void VKassistent::sendGeo(long peerId, float lat, float lon) {
-  sendGeo(peerId, "", lat, lon);
+long VKassistent::sendGeo(long peerId, float lat, float lon) {
+  return sendGeo(peerId, "", lat, lon);
 }
 
-void VKassistent::sendGeo(long peerId, const String& text, float lat, float lon) {
+long VKassistent::sendGeo(long peerId, const String& text, float lat, float lon) {
   String url = "https://api.vk.com/method/messages.send";
   url += "?peer_id=" + String(peerId);
   url += "&message=" + _urlencode(text);
@@ -369,7 +386,7 @@ void VKassistent::sendGeo(long peerId, const String& text, float lat, float lon)
   url += "&v=5.131";
   url += "&random_id=" + String(random(1000000, 9999999));
   url += "&access_token=" + _Token;
-  _sendRequest(url);
+  return _extractCmid(_sendRequest(url));
 }
 
 // ─── sendPhotoFromFS ───────────────────────────────────────
@@ -485,11 +502,18 @@ bool VKassistent::sendPhotoFromFS(long peerId, const String& text, const String&
 
 // ─── _getPhotoUploadServer ─────────────────────────────────
 String VKassistent::_getPhotoUploadServer() {
+  if (_UserToken.length() == 0) {
+    _boxStart("Фото");
+    Serial.println("❌ Не задан пользовательский токен (setUserToken)");
+    _boxEnd();
+    return "";
+  }
+
   _resetClient();
 
   HTTPClient http;
   String url = "https://api.vk.com/method/photos.getMessagesUploadServer";
-  url += "?access_token=" + _Token;
+  url += "?access_token=" + _UserToken;
   url += "&v=5.131";
 
   http.begin(_client, url);
@@ -609,7 +633,7 @@ bool VKassistent::_saveMessagesPhoto(const String& server, const String& photo,
   url += "?server=" + _urlencode(server);
   url += "&photo=" + _urlencode(photo);
   url += "&hash=" + _urlencode(hash);
-  url += "&access_token=" + _Token;
+  url += "&access_token=" + _UserToken;
   url += "&v=5.131";
 
   http.begin(_client, url);
@@ -811,17 +835,21 @@ void VKassistent::onMessage(String cmd, CallbackFull callback) {
   _commands.push_back(rc);
 }
 
+void VKassistent::onAnyMessage(CallbackFull cb) {
+  _anyCallbacks.push_back(cb);
+}
+
 void VKassistent::onPhoto  (CallbackFull cb) { _photoCallbacks.push_back(cb);   }
 void VKassistent::onDoc    (CallbackFull cb) { _docCallbacks.push_back(cb);     }
 void VKassistent::onGeo    (CallbackFull cb) { _geoCallbacks.push_back(cb);     }
 void VKassistent::onSticker(CallbackFull cb) { _stickerCallbacks.push_back(cb); }
 
 // ─── Отправка ──────────────────────────────────────────────
-void VKassistent::send(long UserID, String text) {
-  sendWithKeyboard(UserID, text, "");
+long VKassistent::send(long UserID, String text) {
+  return sendWithKeyboard(UserID, text, "");
 }
 
-void VKassistent::sendWithKeyboard(long UserID, String text, String keyboard) {
+long VKassistent::sendWithKeyboard(long UserID, String text, String keyboard) {
   String url = "https://api.vk.com/method/messages.send";
   url += "?peer_id=" + String(UserID);
   url += "&message=" + _urlencode(text);
@@ -829,17 +857,28 @@ void VKassistent::sendWithKeyboard(long UserID, String text, String keyboard) {
   url += "&v=5.131";
   url += "&random_id=" + String(random(1000000, 9999999));
   url += "&access_token=" + _Token;
-  _sendRequest(url);
+
+  String response = _sendRequest(url);
+  long cmid = _extractCmid(response);
+
+  if (cmid == 0 && response.length() > 0) {
+    _logError("⚠️ Не удалось извлечь cmid из ответа");
+  }
+  return cmid;
 }
 
-void VKassistent::sendToLast(String text) {
+long VKassistent::sendMenu(long peerId, const String& title, const String& keyboard) {
+  return sendWithKeyboard(peerId, title, keyboard);
+}
+
+long VKassistent::sendToLast(String text) {
   if (_lastPeerId == 0) {
     _boxStart("sendToLast");
     Serial.println("⚠️ Вне колбэка");
     _boxEnd();
-    return;
+    return 0;
   }
-  send(_lastPeerId, text);
+  return send(_lastPeerId, text);
 }
 
 // ─── Админы ────────────────────────────────────────────────
@@ -919,17 +958,29 @@ void VKassistent::_handleCommand(VKMessage& msg) {
   long savedPeer = _lastPeerId;
   _lastPeerId = msg.peerId;
 
+  if (_strictAdmins && !isAdmin(msg.fromId)) {
+    if (_denyMessage.length() > 0) send(msg.peerId, _denyMessage);
+    _lastPeerId = savedPeer;
+    return;
+  }
+
   if (msg.hasPhoto())   for (auto& cb : _photoCallbacks)   cb(msg);
   if (msg.hasDoc())     for (auto& cb : _docCallbacks)     cb(msg);
   if (msg.hasGeo())     for (auto& cb : _geoCallbacks)     cb(msg);
   if (msg.hasSticker()) for (auto& cb : _stickerCallbacks) cb(msg);
 
   if (msg.text.length() > 0) {
+    bool matched = false;
     for (auto& rc : _commands) {
       if (rc.cmd != msg.text) continue;
+      matched = true;
       if (rc.oldCb)    rc.oldCb(msg.peerId, msg.text);
       if (rc.simpleCb) rc.simpleCb();
       if (rc.fullCb)   rc.fullCb(msg);
+    }
+
+    if (!matched) {
+      for (auto& cb : _anyCallbacks) cb(msg);
     }
   }
 
@@ -981,10 +1032,37 @@ void VKassistent::_parseAttachments(JsonArray atts, std::vector<VKAttachment>& o
   }
 }
 
+// ─── _extractCmid ──────────────────────────────────────────
+static long _extractCmid(const String& response) {
+  if (response.length() == 0) return 0;
+  DynamicJsonDocument doc(2048);
+  if (deserializeJson(doc, response)) return 0;
+  if (doc.containsKey("error")) return 0;
+
+  JsonVariant resp = doc["response"];
+  if (resp.is<JsonArray>()) {
+    JsonArray arr = resp.as<JsonArray>();
+    if (arr.size() == 0) return 0;
+    if (arr[0].is<long>()) return arr[0].as<long>();
+    JsonObject o = arr[0].as<JsonObject>();
+    if (o.containsKey("conversation_message_id"))
+      return o["conversation_message_id"].as<long>();
+    return o["message_id"] | 0;
+  }
+  if (resp.is<JsonObject>()) {
+    JsonObject o = resp.as<JsonObject>();
+    if (o.containsKey("conversation_message_id"))
+      return o["conversation_message_id"].as<long>();
+    return o["message_id"] | 0;
+  }
+  return resp | 0L;
+}
+
 // ─── _sendRequest ──────────────────────────────────────────
-void VKassistent::_sendRequest(String url) {
+String VKassistent::_sendRequest(String url) {
   int attempts = 0;
   int code = -1;
+  String response = "";
 
   while (attempts < 3 && code != 200) {
     _resetClient();
@@ -994,20 +1072,25 @@ void VKassistent::_sendRequest(String url) {
     code = http.GET();
 
     if (code == 200) {
-      String response = http.getString();
+      response = http.getString();
       if (response.indexOf("\"error\"") != -1) {
-        _boxStart("VK отправка");
-        Serial.println("❌ " + response);
-        _boxEnd();
+        if (_logLevel >= VK_LOG_ERROR) {
+          _boxStart("VK ошибка");
+          Serial.println("❌ " + response);
+          _boxEnd();
+        }
+        response = "";
       }
     } else {
       if (code != -1 && code != -11) {
-        _boxStart("VK отправка");
-        Serial.print("❌ Попытка ");
-        Serial.print(attempts + 1);
-        Serial.print(": HTTP ");
-        Serial.println(code);
-        _boxEnd();
+        if (_logLevel >= VK_LOG_ERROR) {
+          _boxStart("VK отправка");
+          Serial.print("❌ Попытка ");
+          Serial.print(attempts + 1);
+          Serial.print(": HTTP ");
+          Serial.println(code);
+          _boxEnd();
+        }
       }
       if (code == -1) _client.stop();
       delay(500);
@@ -1018,10 +1101,45 @@ void VKassistent::_sendRequest(String url) {
   }
 
   if (code != 200) {
-    _boxStart("VK отправка");
-    Serial.println("❌ Не отправлено после 3 попыток");
-    _boxEnd();
+    if (_logLevel >= VK_LOG_ERROR) {
+      _boxStart("VK отправка");
+      Serial.println("❌ Не отправлено после 3 попыток");
+      _boxEnd();
+    }
+    return "";
   }
+
+  return response;
+}
+
+// ─── editMessage ───────────────────────────────────────────
+long VKassistent::editMessage(long peerId, long cmid, const String& newText) {
+  return editMessage(peerId, cmid, newText, "");
+}
+
+long VKassistent::editMessage(long peerId, long cmid, const String& newText,
+                              const String& keyboard) {
+  if (cmid <= 0) {
+    _boxStart("editMessage");
+    Serial.println("⚠️ cmid = 0, нечего редактировать");
+    _boxEnd();
+    return 0;
+  }
+
+  String url = "https://api.vk.com/method/messages.edit";
+  url += "?peer_id=" + String(peerId);
+  url += "&conversation_message_id=" + String(cmid);
+  url += "&message=" + _urlencode(newText);
+  if (keyboard != "") url += "&keyboard=" + _urlencode(keyboard);
+  url += "&v=5.131";
+  url += "&access_token=" + _Token;
+
+  String response = _sendRequest(url);
+  if (response.length() == 0) return 0;
+
+  DynamicJsonDocument doc(512);
+  if (deserializeJson(doc, response)) return 0;
+  return doc["response"] | 0;
 }
 
 // ─── _urlencode ────────────────────────────────────────────
